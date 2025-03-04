@@ -1,4 +1,3 @@
-![SoftHSM-backend](https://images.unsplash.com/photo-1603793906435-22f202534164?q=80&w=1920&auto=format&fit=crop)  
 
 # ⚠️ Disclaimer: SoftHSM
 
