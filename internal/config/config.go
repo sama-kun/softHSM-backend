@@ -14,6 +14,14 @@ type Config struct {
 	Database    DBConfig
 	HTTPServer  `yaml:"http_server"`
 	RedisConfig `yaml:"redis"`
+	JWTConfig   `yaml:"jwt_config"`
+}
+
+type JWTConfig struct {
+	Secret            string `yaml:"secret" env-default:"ono"`
+	Expires           int    `yaml:"expires" env-default:"1440"`
+	ActivationSecret  string `json:"activation_secret"`
+	ActivationExpires int    `json:"activation_expires"`
 }
 
 type RedisConfig struct {

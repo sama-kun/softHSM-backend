@@ -36,10 +36,15 @@ func NewRedis(cfg config.RedisConfig) (*Redis, error) {
 func (r *Redis) Close() error {
 	return r.client.Close()
 }
-func (r *Redis) SaveToken(ctx context.Context, email, token string) error {
-	return r.client.Set(ctx, "token:"+email, token, 24*time.Hour).Err()
+func (r *Redis) Save(ctx context.Context, key, value string, expiresInMinute int64) error {
+	return r.client.Set(ctx, key, value, time.Duration(expiresInMinute)*time.Minute).Err()
 }
 
-func (r *Redis) GetToken(ctx context.Context, email string) (string, error) {
-	return r.client.Get(ctx, "token:"+email).Result()
+func (r *Redis) Get(ctx context.Context, key string) (string, error) {
+	return r.client.Get(ctx, key).Result()
+}
+
+// Delete удаляет ключ из Redis
+func (r *Redis) Delete(ctx context.Context, key string) error {
+	return r.client.Del(ctx, key).Err()
 }

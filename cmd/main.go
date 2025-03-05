@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"soft-hsm/internal/config"
 	"soft-hsm/internal/lib/logger/sl"
+	mw "soft-hsm/internal/middleware"
 	"soft-hsm/internal/storage"
 	"syscall"
 	"time"
@@ -44,6 +45,8 @@ func main() {
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.URLFormat)
+
+	router.Use(mw.JSONResponseMiddleware)
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
