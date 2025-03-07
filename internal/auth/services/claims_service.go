@@ -10,7 +10,7 @@ import (
 type ClaimsService struct {
 	cfg   *config.Config
 	Email string `json:"email"`
-	Id    int
+	Id    int `json:"id"`
 	jwt.RegisteredClaims
 }
 
@@ -61,4 +61,19 @@ func (c *ClaimsService) GenerateActivationToken(email string) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtSecret)
+}
+
+func (s *ClaimsService) ValidateActivationToken(tokenString string) (*ClaimsService, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &ClaimsService{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(s.cfg.JWTConfig.ActivationSecret), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	claims, ok := token.Claims.(*ClaimsService)
+	if !ok || !token.Valid {
+		return nil, jwt.ErrSignatureInvalid
+	}
+	return claims, nil
 }

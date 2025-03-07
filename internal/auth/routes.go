@@ -11,5 +11,6 @@ func AuthRoutes(authHandler *handlers.AuthHandler) chi.Router {
 
 	r.Post("/register", authHandler.Register)
   r.Post("/login", authHandler.Login)
+	r.Patch("/activate", authHandler.Activate)
 	return r
 }

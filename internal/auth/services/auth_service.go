@@ -115,3 +115,5 @@ func (s *AuthService) Login(ctx context.Context, loginDto dto.LoginDTO) (*dto.Lo
 func (s *AuthService) Logout(ctx context.Context, email string) error {
 	return s.tokenRepo.DeleteToken(ctx, email)
 }
+
+
