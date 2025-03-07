@@ -20,3 +20,8 @@ jwt_config:
   expires: 1440
   activationSecret: "yuko"
   activationExpires: 5
+mailer:
+  email: "samgar.robot@gmail.com"
+  password: "hsoi ubkd btow wkoa"
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587

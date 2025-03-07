@@ -10,11 +10,19 @@ import (
 )
 
 type Config struct {
-	Env         string `yaml:"env" env-default:"local"` //env-required: "true" in prod
-	Database    DBConfig
-	HTTPServer  `yaml:"http_server"`
-	RedisConfig `yaml:"redis"`
-	JWTConfig   `yaml:"jwt_config"`
+	Env          string `yaml:"env" env-default:"local"` //env-required: "true" in prod
+	Database     DBConfig
+	HTTPServer   `yaml:"http_server"`
+	RedisConfig  `yaml:"redis"`
+	JWTConfig    `yaml:"jwt_config"`
+	MailerConfig `yaml:"mailer"`
+}
+
+type MailerConfig struct {
+	From     string `yaml:"from" env-default:"samgar.robot@gmail.com"`
+	Password string `yaml:"password" validate:"required,email"`
+	SMTPHost string `yaml:"smtp_host" validate:"required"`
+	SMTPPort int    `yaml:"smtp_port" validate:"required,numeric"`
 }
 
 type JWTConfig struct {

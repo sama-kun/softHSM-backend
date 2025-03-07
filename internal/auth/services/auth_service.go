@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"soft-hsm/internal/auth/dto"
 	"soft-hsm/internal/auth/repository"
@@ -13,33 +12,47 @@ import (
 )
 
 type AuthService struct {
-	tokenRepo       repository.TokenRepository
-	cliamsService   ClaimsService
-	userRepo        userRepository.UserRepository
-	mailer          mailer.Mailer
-	passwordService PasswordService
+	tokenRepo       repository.TokenRepositoryInterface
+	cliamsService   *ClaimsService
+	userRepo        userRepository.UserRepositoryInterface
+	mailer          *mailer.Mailer
+	passwordService *PasswordService
 }
 
-func NewAuthService(tokenRepo repository.TokenRepository, claimsService ClaimsService, userRepo userRepository.UserRepository, mailer mailer.Mailer, passwordService PasswordService) *AuthService {
-	return &AuthService{tokenRepo: tokenRepo, cliamsService: claimsService, userRepo: userRepo, mailer: mailer, passwordService: passwordService}
+func NewAuthService(
+	tokenRepo repository.TokenRepositoryInterface,
+	claimsService *ClaimsService,
+	userRepo userRepository.UserRepositoryInterface,
+	mailer *mailer.Mailer,
+	passwordService *PasswordService,
+) *AuthService {
+	return &AuthService{
+		tokenRepo:       tokenRepo,
+		cliamsService:   claimsService,
+		userRepo:        userRepo,
+		mailer:         mailer,
+		passwordService: passwordService,
+	}
 }
-
 func (s *AuthService) Register(ctx context.Context, registerDTO dto.RegisterDTO) (*dto.RegisterResponseDTO, error) {
 	if err := validators.ValidateStruct(registerDTO); err != nil {
 		return nil, fmt.Errorf("invalid input: %w", err)
 	}
 
-	if err := s.userRepo.IsEmailTaken(ctx, registerDTO.Email); err == nil {
+	if err := s.userRepo.IsEmailTaken(ctx, registerDTO.Email); err != nil {
 		return nil, fmt.Errorf("user already exists")
 	}
 
 	hashedPassword, err := s.passwordService.HashPassword(registerDTO.Password)
-
 	if err != nil {
 		return nil, fmt.Errorf("password cannot hash: %w", err)
 	}
 
-	newUser, err := s.userRepo.SaveUser(ctx, &models.User{Email: registerDTO.Email, Password: hashedPassword, Login: registerDTO.Login})
+	newUser, err := s.userRepo.SaveUser(ctx, &models.User{
+		Email:    registerDTO.Email,
+		Password: hashedPassword,
+		Login:    registerDTO.Login,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save user: %w", err)
 	}
@@ -53,17 +66,17 @@ func (s *AuthService) Register(ctx context.Context, registerDTO dto.RegisterDTO)
 		return nil, fmt.Errorf("cannot save activation token: %w", err)
 	}
 
-	err = s.mailer.SendActivationEmail(newUser.Email, activationToken)
-
-	if err != nil {
-		return nil, fmt.Errorf("cannot send to email: %w", err)
-	}
+	// Send email asynchronously
+	go func() {
+		if err := s.mailer.SendActivationEmail(newUser.Email, activationToken); err != nil {
+			fmt.Printf("Failed to send activation email to %s: %v\n", newUser.Email, err)
+		}
+	}()
 
 	return &dto.RegisterResponseDTO{
 		Success: "User successfully created and activation email sent",
 		Email:   newUser.Email,
 	}, nil
-
 }
 
 func (s *AuthService) Login(ctx context.Context, loginDto dto.LoginDTO) (*dto.LoginResponseDTO, error) {
@@ -74,11 +87,12 @@ func (s *AuthService) Login(ctx context.Context, loginDto dto.LoginDTO) (*dto.Lo
 
 	user, err := s.userRepo.GetUserByEmail(ctx, loginDto.Email)
 
-	if err != nil {
-		if errors.Is(err, userRepository.ErrUserNotFound) {
-			return nil, errors.New("invalid credentials")
-		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
+	if !s.passwordService.CheckPassword(loginDto.Password, user.Password) || err != nil {
+		return nil, fmt.Errorf("incorrect login or password: %w", err)
+	}
+
+	if !user.IsActive {
+		return nil, fmt.Errorf("accout not active")
 	}
 
 	token, err := s.cliamsService.GenerateToken(int(user.Id), loginDto.Email)

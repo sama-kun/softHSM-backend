@@ -5,6 +5,10 @@ import "golang.org/x/crypto/bcrypt"
 type PasswordService struct {
 }
 
+func NewPasswordService() *PasswordService {
+	return &PasswordService{}
+}
+
 func (s *PasswordService) HashPassword(password string) (string, error) {
 	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {

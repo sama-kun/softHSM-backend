@@ -5,20 +5,18 @@ import (
 	"fmt"
 	"html/template"
 	"net/smtp"
+	"soft-hsm/internal/config"
+	"strconv"
 )
 
 type Mailer struct {
-	From     string
-	Password string
-	SMTPHost string
-	SMTPPort string
+	mailerConfig *config.MailerConfig
 }
 
-func NewMailer(from, password, host, port string) *Mailer {
-	return &Mailer{From: from, Password: password, SMTPHost: host, SMTPPort: port}
+func NewMailer(mailerConfig *config.MailerConfig) *Mailer {
+	return &Mailer{mailerConfig: mailerConfig}
 }
 
-// SendActivationEmail отправляет красивое письмо с активацией
 func (m *Mailer) SendActivationEmail(to, token string) error {
 	tmpl, err := template.ParseFiles("templates/activation_email.html")
 	if err != nil {
@@ -40,6 +38,13 @@ func (m *Mailer) SendActivationEmail(to, token string) error {
 			body.String(),
 	)
 
-	auth := smtp.PlainAuth("", m.From, m.Password, m.SMTPHost)
-	return smtp.SendMail(m.SMTPHost+":"+m.SMTPPort, auth, m.From, []string{to}, msg)
+	auth := smtp.PlainAuth("", m.mailerConfig.From, m.mailerConfig.Password, m.mailerConfig.SMTPHost)
+
+	return smtp.SendMail(
+		m.mailerConfig.SMTPHost+":"+strconv.Itoa(m.mailerConfig.SMTPPort),
+		auth,
+		m.mailerConfig.From,
+		[]string{to},
+		msg,
+	)
 }

@@ -4,8 +4,8 @@ import "time"
 
 type BaseModel struct {
 	Id        int64      `json:"id"`
-	IsDeleted bool       `json:"is_deleted"`
-	DeletedAt *time.Time `json:"deleted_at,omitempty"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	CreatedAt time.Time  `json:"created_at"`
+	IsDeleted bool       `json:"isDeleted,omitempty"`
+	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+	UpdatedAt time.Time  `json:"updatedAt,omitempty"`
+	CreatedAt time.Time  `json:"createdAt,omitempty"`
 }

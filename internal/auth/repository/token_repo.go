@@ -10,6 +10,9 @@ type TokenRepositoryInterface interface {
 	SaveToken(ctx context.Context, email, token string, expiresInMinute int64) error
 	GetToken(ctx context.Context, email string) (string, error)
 	DeleteToken(ctx context.Context, email string) error
+	SaveActivationToken(ctx context.Context, email, token string, expiresIn int64) error
+	GetActivationToken(ctx context.Context, email string) (string, error)
+	DeleteActivationToken(ctx context.Context, email string) error
 }
 
 type TokenRepository struct {

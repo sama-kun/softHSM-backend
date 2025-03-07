@@ -13,9 +13,10 @@ import (
 	"time"
 
 	"log/slog"
+	routerGroup "soft-hsm/internal/router"
 
-	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
 )
 
 func main() {
@@ -23,12 +24,14 @@ func main() {
 
 	slog.Info("Project running in: ", slog.String("ADDRESS", cfg.Address))
 
-	_, err := storage.NewPostgresDB(cfg.Database)
+	db, err := storage.NewPostgresDB(cfg.Database)
 
 	if err != nil {
 		slog.Error("Failed to init DB", sl.Err(err))
 		os.Exit(1)
 	}
+
+	defer db.Close()
 	redisClient, err := storage.NewRedis(cfg.RedisConfig)
 
 	if err != nil {
@@ -38,25 +41,26 @@ func main() {
 	defer redisClient.Close()
 	slog.Info("Подключение к Redis установлено")
 
-	router := chi.NewRouter()
+	
 
-	router.Use(middleware.RequestID)
-	router.Use(middleware.RealIP)
-	router.Use(middleware.Logger)
-	router.Use(middleware.Recoverer)
-	router.Use(middleware.URLFormat)
+	
 
-	router.Use(mw.JSONResponseMiddleware)
+	r := chi.NewRouter()
 
-	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Server is running!"))
-	})
+	// Подключаем middleware ДО создания маршрутов
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.URLFormat)
+	r.Use(mw.JSONResponseMiddleware)
+
+	r = routerGroup.SetupRouter(cfg, db, redisClient)
 
 	// Запуск сервера
 	srv := &http.Server{
 		Addr:         cfg.HTTPServer.Address,
-		Handler:      router,
+		Handler:      r,
 		ReadTimeout:  cfg.HTTPServer.Timeout,
 		WriteTimeout: cfg.HTTPServer.Timeout,
 		IdleTimeout:  cfg.HTTPServer.IdleTimeout,

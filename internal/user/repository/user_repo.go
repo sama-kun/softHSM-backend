@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"soft-hsm/internal/storage"
 	"soft-hsm/internal/user/models"
-
-	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -16,6 +14,8 @@ var (
 
 type UserRepositoryInterface interface {
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	SaveUser(ctx context.Context, user *models.User) (*models.User, error)
+	IsEmailTaken(ctx context.Context, email string) error
 }
 
 type UserRepository struct {
@@ -28,19 +28,23 @@ func NewUserRepository(db *storage.Postgres) UserRepositoryInterface {
 
 func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	query := `
-		SELECT * from users 
+		SELECT id, email, password, login, is_active, created_at, updated_at FROM users 
 		WHERE email = $1 AND is_deleted = FALSE
 	`
 
 	var user models.User
 
-	err := r.db.Conn().QueryRow(ctx, query, email).Scan(&user)
-
+	err := r.db.Conn().QueryRow(ctx, query, email).Scan(
+		&user.Id,
+		&user.Email,
+		&user.Password,
+		&user.Login,
+		&user.IsActive,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotFound
-		}
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch user: %w", err)
 	}
 
 	return &user, nil
