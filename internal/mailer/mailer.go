@@ -25,7 +25,7 @@ func (m *Mailer) SendActivationEmail(to, token string) error {
 
 	var body bytes.Buffer
 	data := map[string]string{
-		"ActivationLink": fmt.Sprintf("http://localhost:8080/activate?token=%s", token),
+		"ActivationLink": fmt.Sprintf("http://localhost:3000/activate?token=%s", token),
 	}
 
 	if err := tmpl.Execute(&body, data); err != nil {

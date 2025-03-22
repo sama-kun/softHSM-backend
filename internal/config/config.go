@@ -28,8 +28,10 @@ type MailerConfig struct {
 type JWTConfig struct {
 	Secret            string `yaml:"secret" env-default:"ono"`
 	Expires           int    `yaml:"expires" env-default:"1440"`
-	ActivationSecret  string `json:"activation_secret"`
-	ActivationExpires int    `json:"activation_expires"`
+	ActivationSecret  string `yaml:"activation_secret"`
+	ActivationExpires int    `yaml:"activation_expires"`
+	SessionSecret     string `yaml:"session_secret"`
+	SessionExpires    string `yaml:"session_expires"`
 }
 
 type RedisConfig struct {

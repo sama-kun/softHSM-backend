@@ -2,7 +2,6 @@
 
 set -e  # Остановить скрипт при ошибке
 
-# Настройки базы данных
 DB_HOST="localhost"
 DB_PORT="5432"
 DB_USER="postgres"

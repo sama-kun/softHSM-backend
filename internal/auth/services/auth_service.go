@@ -30,7 +30,7 @@ func NewAuthService(
 		tokenRepo:       tokenRepo,
 		cliamsService:   claimsService,
 		userRepo:        userRepo,
-		mailer:         mailer,
+		mailer:          mailer,
 		passwordService: passwordService,
 	}
 }
@@ -61,6 +61,8 @@ func (s *AuthService) Register(ctx context.Context, registerDTO dto.RegisterDTO)
 	if err != nil {
 		return nil, fmt.Errorf("cannot generate a token: %w", err)
 	}
+
+	fmt.Println("Token:", activationToken)
 
 	if err := s.tokenRepo.SaveActivationToken(ctx, newUser.Email, activationToken, int64(s.cliamsService.cfg.JWTConfig.ActivationExpires)); err != nil {
 		return nil, fmt.Errorf("cannot save activation token: %w", err)
@@ -116,4 +118,43 @@ func (s *AuthService) Logout(ctx context.Context, email string) error {
 	return s.tokenRepo.DeleteToken(ctx, email)
 }
 
+func (s *AuthService) SetMasterPassword(ctx context.Context, id int64, masterPassword string) (*dto.SetMasterPasswordResponseDTO, error) {
+	hashedPassword, err := s.passwordService.HashPassword(masterPassword)
+	if err != nil {
+		return nil, fmt.Errorf("master password cannot hash: %w", err)
+	}
 
+	err = s.userRepo.SetMasterPassword(ctx, id, hashedPassword)
+
+	if err != nil {
+		return nil, fmt.Errorf("%w", err)
+	}
+
+	return &dto.SetMasterPasswordResponseDTO{
+		Success: "Master password was succesfully setted",
+		Id:      id,
+	}, nil
+}
+
+func (s *AuthService) CheckMasterPassword(ctx context.Context, id int64, masterPassword string) (*dto.CheckMasterPasswordResponseDTO, error) {
+	user, err := s.userRepo.GetUserById(ctx, id)
+
+	if !s.passwordService.CheckPassword(masterPassword, user.MasterPassword) || err != nil {
+		return nil, fmt.Errorf("incorrect login or password: %w", err)
+	}
+
+	if !user.IsActive {
+		return nil, fmt.Errorf("User not active: %w", err)
+	}
+
+	sessionToken, err := s.cliamsService.GenerateBlockchainOTP(user.Id)
+
+	if err != nil {
+		return nil, fmt.Errorf("cannot generate session token: %w", err)
+	}
+
+	return &dto.CheckMasterPasswordResponseDTO{
+		SessionToken: sessionToken,
+		Id:           id,
+	}, nil
+}

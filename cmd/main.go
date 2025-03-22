@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"soft-hsm/internal/config"
 	"soft-hsm/internal/lib/logger/sl"
-	mw "soft-hsm/internal/middleware"
 	"soft-hsm/internal/storage"
 	"syscall"
 	"time"
@@ -25,15 +24,13 @@ func main() {
 	slog.Info("Project running in: ", slog.String("ADDRESS", cfg.Address))
 
 	db, err := storage.NewPostgresDB(cfg.Database)
-
 	if err != nil {
 		slog.Error("Failed to init DB", sl.Err(err))
 		os.Exit(1)
 	}
-
 	defer db.Close()
-	redisClient, err := storage.NewRedis(cfg.RedisConfig)
 
+	redisClient, err := storage.NewRedis(cfg.RedisConfig)
 	if err != nil {
 		slog.Error("Ошибка подключения к Redis", "error", err)
 		os.Exit(1)
@@ -41,11 +38,15 @@ func main() {
 	defer redisClient.Close()
 	slog.Info("Подключение к Redis установлено")
 
-	
-
-	
-
 	r := chi.NewRouter()
+
+	// r.Use(cors.Handler(cors.Options{
+	// 	AllowedOrigins:   []string{"*"},
+	// 	AllowedMethods:   []string{"*"},
+	// 	AllowedHeaders:   []string{"*"},
+	// 	AllowCredentials: false,
+	// 	MaxAge:           300,
+	// }))
 
 	// Подключаем middleware ДО создания маршрутов
 	r.Use(middleware.RequestID)
@@ -53,11 +54,11 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.URLFormat)
-	r.Use(mw.JSONResponseMiddleware)
+	// r.Use(mw.JSONResponseMiddleware)
+	
 
-	r = routerGroup.SetupRouter(cfg, db, redisClient)
+	routerGroup.SetupRouter(r,cfg, db, redisClient)
 
-	// Запуск сервера
 	srv := &http.Server{
 		Addr:         cfg.HTTPServer.Address,
 		Handler:      r,
@@ -66,7 +67,6 @@ func main() {
 		IdleTimeout:  cfg.HTTPServer.IdleTimeout,
 	}
 
-	// Горутина для запуска сервера
 	go func() {
 		slog.Info("Starting server...", slog.String("address", cfg.HTTPServer.Address))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -75,11 +75,10 @@ func main() {
 		}
 	}()
 
-	// Ожидание сигнала завершения (graceful shutdown)
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	<-stop // Ждём сигнал
+	<-stop
 
 	slog.Info("Shutting down server...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -90,5 +89,19 @@ func main() {
 	}
 
 	slog.Info("Server exited successfully")
-
 }
+
+// func enableCORS(next http.Handler) http.Handler {
+// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 		w.Header().Set("Access-Control-Allow-Origin", "*")
+// 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+// 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+// 		if r.Method == http.MethodOptions {
+// 			w.WriteHeader(http.StatusNoContent)
+// 			return
+// 		}
+
+// 		next.ServeHTTP(w, r)
+// 	})
+// }
