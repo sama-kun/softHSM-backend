@@ -6,6 +6,4 @@ type GenerateKeyDTO struct {
 	Name        string                `json:"name"`
 	Description string                `json:"description"`
 	Blockchain  models.BlockchainType `json:"blockchain"`
-
-	SessionToken string `json:"sessionToken"`
 }

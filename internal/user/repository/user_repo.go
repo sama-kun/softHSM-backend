@@ -56,18 +56,28 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*mod
 
 	var user models.User
 
+	var masterPassword *string
+
 	err := r.db.Conn().QueryRow(ctx, query, email).Scan(
 		&user.Id,
 		&user.Email,
 		&user.Password,
-		&user.MasterPassword,
+		&masterPassword, // NULL возможен
 		&user.Login,
 		&user.IsActive,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch user: %w", err)
+	}
+
+	// Если masterPassword == nil, то записываем пустую строку
+	if masterPassword != nil {
+		user.MasterPassword = *masterPassword
+	} else {
+		user.MasterPassword = ""
 	}
 
 	return &user, nil
@@ -75,7 +85,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*mod
 
 func (r *UserRepository) GetUserById(ctx context.Context, id int64) (*models.User, error) {
 	query := `
-		SELECT id, email, login, is_active, created_at, updated_at
+		SELECT id, email, password, master_password, login, is_active, created_at, updated_at
 		FROM users
 		WHERE id = $1 AND is_deleted = FALSE
 	`
@@ -85,6 +95,8 @@ func (r *UserRepository) GetUserById(ctx context.Context, id int64) (*models.Use
 	err := r.db.Conn().QueryRow(ctx, query, id).Scan(
 		&user.Id,
 		&user.Email,
+		&user.Password,
+		&user.MasterPassword, // NULL возможен
 		&user.Login,
 		&user.IsActive,
 		&user.CreatedAt,
@@ -138,7 +150,7 @@ func (r *UserRepository) SetMasterPassword(ctx context.Context, id int64, hashed
 	UPDATE users 
     SET 
         master_password = $2, 
-        is_active_master = TRUE
+        is_active_master = TRUE,
 				is_active = TRUE
     WHERE 
         id = $1 

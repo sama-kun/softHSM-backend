@@ -10,6 +10,9 @@ func BlockchainKeyRoutes(blockchainKeyHandler *handlers.BlockchainKeyHandler) ch
 	r := chi.NewRouter()
 
 	r.Post("/", blockchainKeyHandler.GenerateKey)
+	r.Post("/import", blockchainKeyHandler.ImportKey)
+	r.Get("/", blockchainKeyHandler.GetKeysByUserId)
+	r.Get("/{id}", blockchainKeyHandler.KeyDetail)
 
 	return r
 }

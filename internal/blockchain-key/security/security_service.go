@@ -17,21 +17,26 @@ type SecurityService struct {
 	MasterKey []byte
 }
 
-func NewSecurityService() *SecurityService {
-	masterPassword := os.Getenv("MASTER_PASSWORD")
-	return &SecurityService{
-		MasterKey: deriveMasterKey(masterPassword),
+func NewSecurityService() (*SecurityService, error) {
+	masterKey, err := loadMasterKeyFromFile("master_key.enc")
+	if err != nil {
+		return nil, err
 	}
+	return &SecurityService{
+		MasterKey: masterKey,
+	}, nil
 }
 
-func deriveMasterKey(password string) []byte {
-	salt := []byte("fixed_salt_value_for_master_key")
-	return pbkdf2.Key([]byte(password), salt, 500000, 32, sha256.New)
+func loadMasterKeyFromFile(filename string) ([]byte, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
-func (s *SecurityService) DeriveEncryptionKey(userPassword string, salt []byte) []byte {
-	combinedKey := append(s.MasterKey, []byte(userPassword)...)
-	return pbkdf2.Key(combinedKey, salt, 100000, 32, sha256.New)
+func (s *SecurityService) DeriveEncryptionKey(salt []byte) []byte {
+	return pbkdf2.Key(s.MasterKey, salt, 100000, 32, sha256.New)
 }
 
 func (s *SecurityService) GenerateSalt() ([]byte, error) {
@@ -42,19 +47,17 @@ func (s *SecurityService) GenerateSalt() ([]byte, error) {
 	return salt, nil
 }
 
-func (s *SecurityService) EncryptPrivateKey(userPassword string, privateKey []byte) (string, string, error) {
+func (s *SecurityService) EncryptPrivateKey(privateKey []byte) (string, string, error) {
 	salt, err := s.GenerateSalt()
 	if err != nil {
 		return "", "", err
 	}
-
-	encryptionKey := s.DeriveEncryptionKey(userPassword, salt)
+	encryptionKey := s.DeriveEncryptionKey(salt)
 
 	block, err := aes.NewCipher(encryptionKey)
 	if err != nil {
 		return "", "", err
 	}
-
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
 		return "", "", err
@@ -69,24 +72,21 @@ func (s *SecurityService) EncryptPrivateKey(userPassword string, privateKey []by
 	return base64.StdEncoding.EncodeToString(encrypted), base64.StdEncoding.EncodeToString(salt), nil
 }
 
-func (s *SecurityService) DecryptPrivateKey(userPassword, encryptedKey, saltB64 string) ([]byte, error) {
+func (s *SecurityService) DecryptPrivateKey(encryptedKey, saltB64 string) ([]byte, error) {
 	salt, err := base64.StdEncoding.DecodeString(saltB64)
 	if err != nil {
 		return nil, err
 	}
-
-	encryptionKey := s.DeriveEncryptionKey(userPassword, salt)
+	encryptionKey := s.DeriveEncryptionKey(salt)
 
 	block, err := aes.NewCipher(encryptionKey)
 	if err != nil {
 		return nil, err
 	}
-
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, err
 	}
-
 	encryptedData, err := base64.StdEncoding.DecodeString(encryptedKey)
 	if err != nil {
 		return nil, err

@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"soft-hsm/internal/auth"
 	"soft-hsm/internal/auth/handlers"
@@ -69,10 +70,18 @@ func setupAuthRoutes(r *chi.Mux, cfg *config.Config, db *storage.Postgres, redis
 
 func setupBlockchainKeyRoutes(r *chi.Mux, db *storage.Postgres) {
 	blockchainKeyRepo := blockchainRepository.NewBlockchainKeyRepository(db)
-	passwordService := services.NewPasswordService()
 
-	securityService := security.NewSecurityService()
-	blockchainKeyService := blockchainService.NewBlockchainKeyService(blockchainKeyRepo, securityService, passwordService)
+	securityService, err := security.NewSecurityService()
+	if err != nil {
+		log.Fatalf("failed to initialize security service: %v", err)
+	}
+	ethereumService := blockchainService.NewEthereumService()
+	blockchainKeyService := blockchainService.NewBlockchainKeyService(blockchainKeyRepo, securityService, ethereumService)
+
+	if err != nil {
+		log.Fatalf("failed to initialize ethereum service: %v", err)
+		return
+	}
 
 	blockchainKeyHandler := blockchainHandler.NewBlockchainKeyHandler(blockchainKeyService)
 

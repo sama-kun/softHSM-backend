@@ -12,7 +12,10 @@ import (
 type BlockchainKeyRepositoryInterface interface {
 	Save(ctx context.Context, blockchainKey *models.BlockchainKey) (*models.BlockchainKey, error)
 	ImportKey(ctx context.Context, key *models.BlockchainKey) (*models.BlockchainKey, error)
-	FindByID(ctx context.Context, id uuid.UUID) (*models.BlockchainKey, error)
+	FindByIDWithKey(ctx context.Context, id uuid.UUID) (*models.BlockchainKey, error)
+	FindByMnemonicHash(ctx context.Context, mnemonicHash string) (*models.BlockchainKey, error)
+	FindByUserID(ctx context.Context, userID int64) ([]models.BlockchainKey, error)
+	FindByID(ctx context.Context, id uuid.UUID, userID int64) (*models.BlockchainKey, error)
 }
 
 type BlockchainKeyRepository struct {
@@ -23,8 +26,37 @@ func NewBlockchainKeyRepository(db *storage.Postgres) BlockchainKeyRepositoryInt
 	return &BlockchainKeyRepository{db: db}
 }
 
-func (r *BlockchainKeyRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.BlockchainKey, error) {
+func (r *BlockchainKeyRepository) FindByID(ctx context.Context, id uuid.UUID, userID int64) (*models.BlockchainKey, error) {
 	const fn = "blockchain_key_repo.FindByID"
+
+	var key models.BlockchainKey
+
+	query := `
+	  SELECT id, blockchain, user_id, name, description, network, address, public_key
+		FROM blockchain_keys
+		WHERE id = $1 AND user_id = $2
+	`
+
+	err := r.db.Conn().QueryRow(ctx, query, id, userID).Scan(
+		&key.Id,
+		&key.Blockchain,
+		&key.UserId,
+		&key.Name,
+		&key.Description,
+		&key.Network,
+		&key.Address,
+		&key.PublicKey,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blockchain key /%s/: %w", fn, err)
+	}
+
+	return &key, nil
+}
+
+func (r *BlockchainKeyRepository) FindByIDWithKey(ctx context.Context, id uuid.UUID) (*models.BlockchainKey, error) {
+	const fn = "blockchain_key_repo.FindByIDWithKey"
 
 	var key models.BlockchainKey
 
@@ -50,7 +82,6 @@ func (r *BlockchainKeyRepository) FindByID(ctx context.Context, id uuid.UUID) (*
 	}
 
 	return &key, nil
-
 }
 
 func (r *BlockchainKeyRepository) Save(ctx context.Context, blockchainKey *models.BlockchainKey) (*models.BlockchainKey, error) {
@@ -63,9 +94,9 @@ func (r *BlockchainKeyRepository) Save(ctx context.Context, blockchainKey *model
 
 	query := `
 	INSERT INTO blockchain_keys 
-	(user_id, blockchain, address, encrypted_key, name, description, network, salt, mnemonic_hash) 
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	RETURNING id, name, description, address, encrypted_key, network, salt, mnemonic_hash
+	(user_id, blockchain, address, encrypted_key, public_key, name, description, network, salt, mnemonic_hash) 
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	RETURNING id, name, description, address, encrypted_key, public_key, network, salt, mnemonic_hash
 `
 
 	err = tx.QueryRow(ctx, query,
@@ -73,12 +104,15 @@ func (r *BlockchainKeyRepository) Save(ctx context.Context, blockchainKey *model
 		blockchainKey.Blockchain,
 		blockchainKey.Address,
 		blockchainKey.EncryptedKey,
+		blockchainKey.PublicKey,
 		blockchainKey.Name,
 		blockchainKey.Description,
 		"goerli",
 		blockchainKey.Salt,
 		blockchainKey.MnemonicHash,
-	).Scan(&blockchainKey.Id, &blockchainKey.Name, &blockchainKey.Description, &blockchainKey.Address, &blockchainKey.EncryptedKey, &blockchainKey.Network, &blockchainKey.Salt, &blockchainKey.MnemonicHash)
+	).Scan(&blockchainKey.Id, &blockchainKey.Name, &blockchainKey.Description,
+		&blockchainKey.Address, &blockchainKey.EncryptedKey, &blockchainKey.PublicKey,
+		&blockchainKey.Network, &blockchainKey.Salt, &blockchainKey.MnemonicHash)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert blockchain key: %w", err)
@@ -107,25 +141,72 @@ func (r *BlockchainKeyRepository) GetPublicKey(ctx context.Context, keyId uuid.U
 	return address, nil
 }
 
-// func (r *BlockchainKeyRepository) FindByUserID(ctx context.Context, userID int) ([]models.BlockchainKey, error) {
-// 	query := `
-// 		SELECT id, user_id, address, encrypted_key, mnemonic, created_at, updated_at
-// 		FROM ethereum_keys
-// 		WHERE user_id = $1 AND is_deleted = FALSE;
-// 	`
-// 	rows, err := r.db.Conn().QueryRow(ctx, query, userID)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer rows.Close()
+func (r *BlockchainKeyRepository) FindByMnemonicHash(ctx context.Context, mnemonicHash string) (*models.BlockchainKey, error) {
+	const fn = "blockchain_key_repo.FindByMnemonicHash"
 
-// 	var keys []models.BlockchainKey
-// 	for rows.Next() {
-// 		var key models.BlockchainKey
-// 		if err := rows.Scan(&key.Id, &key.UserId, &key.Address, &key.EncryptedKey, &key.Mnemonnic, &key.CreatedAt, &key.UpdatedAt); err != nil {
-// 			return nil, err
-// 		}
-// 		keys = append(keys, key)
-// 	}
-// 	return keys, nil
-// }
+	var key models.BlockchainKey
+
+	query := `
+	  SELECT id, blockchain, user_id, encrypted_key, name, description, network, address, mnemonic_hash
+		FROM blockchain_keys
+		WHERE mnemonic_hash = $1
+	`
+
+	err := r.db.Conn().QueryRow(ctx, query, mnemonicHash).Scan(
+		&key.Id,
+		&key.Blockchain,
+		&key.UserId,
+		&key.EncryptedKey,
+		&key.Name,
+		&key.Description,
+		&key.Network,
+		&key.Address,
+		&key.MnemonicHash,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to find blockchain key by mnemonic hash /%s/: %w", fn, err)
+	}
+
+	return &key, nil
+}
+
+func (r *BlockchainKeyRepository) FindByUserID(ctx context.Context, userID int64) ([]models.BlockchainKey, error) {
+	const fn = "blockchain_key_repo.FindByUserID"
+
+	query := `
+		SELECT id, blockchain, user_id, name, description, network, address, public_key
+		FROM blockchain_keys
+		WHERE user_id = $1
+	`
+
+	rows, err := r.db.Conn().Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blockchain keys /%s/: %w", fn, err)
+	}
+	defer rows.Close()
+
+	var keys []models.BlockchainKey
+	for rows.Next() {
+		var key models.BlockchainKey
+		if err := rows.Scan(
+			&key.Id,
+			&key.Blockchain,
+			&key.UserId,
+			&key.Name,
+			&key.Description,
+			&key.Network,
+			&key.Address,
+			&key.PublicKey,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan blockchain key /%s/: %w", fn, err)
+		}
+		keys = append(keys, key)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating over blockchain keys /%s/: %w", fn, err)
+	}
+
+	return keys, nil
+}

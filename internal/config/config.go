@@ -31,7 +31,7 @@ type JWTConfig struct {
 	ActivationSecret  string `yaml:"activation_secret"`
 	ActivationExpires int    `yaml:"activation_expires"`
 	SessionSecret     string `yaml:"session_secret"`
-	SessionExpires    string `yaml:"session_expires"`
+	SessionExpires    int    `yaml:"session_expires"`
 }
 
 type RedisConfig struct {

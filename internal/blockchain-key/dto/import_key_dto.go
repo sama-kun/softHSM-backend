@@ -1,11 +1,17 @@
 package dto
 
-import "soft-hsm/internal/blockchain-key/models"
+type KeyType string
+
+const (
+	MnemonicKey KeyType = "mnemonic"
+	PrivateKey  KeyType = "key"
+)
 
 type ImportKeyDTO struct {
-	PrivateKey  string                `json:"privateKey"`
-	Blockchain  models.BlockchainType `json:"blockchain"`
-	Network     string                `json:"network"`
-	Name        string                `json:"name,omitempty"`
-	Description string                `json:"description,omitempty"`
+	Type  KeyType `json:"type" binding:"required,oneof=mnemonic key"`
+	Input string  `json:"input" binding:"required"`
+}
+
+type ImportKeyResponseDTO struct {
+	Address string `json:"address"`
 }

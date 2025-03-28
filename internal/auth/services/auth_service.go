@@ -89,13 +89,17 @@ func (s *AuthService) Login(ctx context.Context, loginDto dto.LoginDTO) (*dto.Lo
 
 	user, err := s.userRepo.GetUserByEmail(ctx, loginDto.Email)
 
-	if !s.passwordService.CheckPassword(loginDto.Password, user.Password) || err != nil {
+	if err != nil {
 		return nil, fmt.Errorf("incorrect login or password: %w", err)
 	}
 
-	if !user.IsActive {
-		return nil, fmt.Errorf("accout not active")
+	if !s.passwordService.CheckPassword(loginDto.Password, user.Password) {
+		return nil, fmt.Errorf("incorrect login or password")
 	}
+
+	// if !user.IsActive {
+	// 	return nil, fmt.Errorf("accout not active")
+	// }
 
 	token, err := s.cliamsService.GenerateToken(int(user.Id), loginDto.Email)
 
@@ -152,6 +156,8 @@ func (s *AuthService) CheckMasterPassword(ctx context.Context, id int64, masterP
 	if err != nil {
 		return nil, fmt.Errorf("cannot generate session token: %w", err)
 	}
+
+	fmt.Println(sessionToken)
 
 	return &dto.CheckMasterPasswordResponseDTO{
 		SessionToken: sessionToken,

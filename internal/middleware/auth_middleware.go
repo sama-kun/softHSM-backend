@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"soft-hsm/internal/auth/services"
 	"soft-hsm/internal/config"
@@ -24,7 +24,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		claims, err := services.NewClaimsService(config.MustLoad()).ValidateToken(token)
 
 		if err != nil {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
+			ErrorHandler(w, http.StatusUnauthorized, err, "invalid token")
 		}
 
 		ctx := context.WithValue(r.Context(), UserKey, claims)
@@ -59,21 +59,15 @@ func GetUserFromContext(r *http.Request) (*services.ClaimsService, error) {
 }
 
 func ExtractAndDecryptSessionToken(r *http.Request) (*services.ClaimsService, error) {
-	var requestBody struct {
-		SessionToken string `json:"sessionToken"`
+	token := r.Header.Get("X-Session-Token")
+	if token == "" {
+		return nil, errors.New("missing session token")
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
-		return nil, errors.New("failed to decode request body")
-	}
-
-	if requestBody.SessionToken == "" {
-		return nil, errors.New("sessionToken is missing in request body")
-	}
+	fmt.Println(token)
 
 	claimsService := services.NewClaimsService(config.MustLoad())
-
-	claims, err := claimsService.ValidateSessionToken(requestBody.SessionToken)
+	claims, err := claimsService.ValidateSessionToken(token)
 	if err != nil {
 		return nil, errors.New("invalid session token")
 	}

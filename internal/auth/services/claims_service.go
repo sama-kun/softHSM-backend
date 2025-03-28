@@ -89,8 +89,8 @@ func (c *ClaimsService) ValidateActivationToken(tokenString string) (*ClaimsServ
 }
 
 func (c *ClaimsService) GenerateBlockchainOTP(userID int64) (string, error) {
-	sessionSecret := []byte(c.cfg.JWTConfig.ActivationSecret)
-	sessionInMinutes := c.cfg.JWTConfig.ActivationExpires
+	sessionSecret := []byte(c.cfg.JWTConfig.SessionSecret)
+	sessionInMinutes := c.cfg.JWTConfig.SessionExpires
 
 	claims := &ClaimsService{
 		Id: int(userID),

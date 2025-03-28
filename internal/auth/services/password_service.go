@@ -31,6 +31,7 @@ func (s *PasswordService) HashPassword(password string) (string, error) {
 	return fmt.Sprintf("%s$%s", encodedSalt, encodedHash), nil
 }
 
+
 func (s *PasswordService) CheckPassword(password, hashedPassword string) bool {
 	parts := strings.Split(hashedPassword, "$")
 	if len(parts) != 2 {
