@@ -14,10 +14,7 @@ const (
 	infuraSepolia = "https://sepolia.infura.io/v3/6341f9c84e9c4f7a91cc518c69a5c11c"
 )
 
-type EthereumService struct {
-	// mainnetClient *rpc.Client
-	// sepoliaClient *rpc.Client
-}
+type EthereumService struct{}
 
 func NewEthereumService() *EthereumService {
 

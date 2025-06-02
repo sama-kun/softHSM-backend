@@ -8,8 +8,9 @@ const (
 )
 
 type ImportKeyDTO struct {
-	Type  KeyType `json:"type" binding:"required,oneof=mnemonic key"`
-	Input string  `json:"input" binding:"required"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	PrivateKey  string `json:"privateKey"`
 }
 
 type ImportKeyResponseDTO struct {

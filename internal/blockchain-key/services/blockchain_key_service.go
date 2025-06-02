@@ -5,8 +5,8 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
+	"math/big"
 
 	"soft-hsm/internal/blockchain-key/dto"
 	"soft-hsm/internal/blockchain-key/models"
@@ -15,7 +15,10 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil/hdkeychain"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/google/uuid"
 	"github.com/tyler-smith/go-bip39"
 )
@@ -23,9 +26,17 @@ import (
 // https://mainnet.infura.io/v3/6341f9c84e9c4f7a91cc518c69a5c11c
 type BlockchainKeyServiceInterface interface {
 	GenerateEthereumKey(ctx context.Context, userID int64, dto dto.GenerateKeyDTO) (*dto.GenerateKeyResponseDTO, error)
-	ImportEthereumKey(ctx context.Context, userID int64, key dto.ImportKeyDTO) (*dto.ImportKeyResponseDTO, error)
+	ImportEthereumKey(ctx context.Context, userID int64, key dto.ImportKeyDTO) (*dto.GenerateKeyResponseDTO, error)
 	FindKeysByUserID(ctx context.Context, userID int64) ([]dto.SafeKeyResponseDTO, error)
 	KeyDetail(ctx context.Context, keyID uuid.UUID, userID int64) (*dto.KeyDetailResponseDTO, error)
+	SendEthereumTransaction(
+		ctx context.Context,
+		userID int64,
+		keyID uuid.UUID,
+		toAddress string,
+		amountInWei *big.Int,
+	) (string, error)
+	ExportAndDeleteEthereumKeyByID(ctx context.Context, id uuid.UUID, userID int64) ([]byte, error)
 }
 
 type BlockchainKeyService struct {
@@ -41,60 +52,6 @@ func NewBlockchainKeyService(blockchainKeyRepo repository.BlockchainKeyRepositor
 		ethereumService:   ethereumService,
 	}
 }
-
-// func (s *BlockchainKeyService) ImportEthereumKey(ctx context.Context, userID int64, key dto.ImportKeyDTO) (*dto.GenerateKeyResponseDTO, error) {
-// 	// 1. Конвертация приватного ключа в ECDSA
-// 	privateKey, err := crypto.HexToECDSA(key.PrivateKey)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("ошибка конвертации приватного ключа: %w", err)
-// 	}
-
-// 	// 2. Генерация публичного ключа
-// 	publicKeyBytes := crypto.FromECDSAPub(&privateKey.PublicKey)
-// 	publicKeyHex := fmt.Sprintf("%x", publicKeyBytes)
-
-// 	// 3. Генерация Ethereum-адреса
-// 	address := crypto.PubkeyToAddress(privateKey.PublicKey).Hex()
-
-// 	// 4. Шифрование приватного ключа
-// 	privateKeyBytes := crypto.FromECDSA(privateKey)
-// 	encryptedKey, salt, err := s.securityService.EncryptPrivateKey(privateKeyBytes)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("ошибка шифрования приватного ключа: %w", err)
-// 	}
-
-// 	// 5. Генерация хеша пустой мнемоники (если она не передается)
-// 	mnemonicHash := sha256.Sum256([]byte(""))
-
-// 	// 6. Сохранение в БД
-// 	blockchainKey := models.BlockchainKey{
-// 		UserId:       userID,
-// 		Name:         &key.Name,
-// 		Description:  &key.Description,
-// 		Blockchain:   models.Ethereum,
-// 		Network:      "goerli",
-// 		Address:      address,
-// 		EncryptedKey: encryptedKey,
-// 		PublicKey:    publicKeyHex,
-// 		Salt:         salt,
-// 		MnemonicHash: hex.EncodeToString(mnemonicHash[:]), // Пустая мнемоника
-// 	}
-
-// 	if _, err := s.blockchainKeyRepo.Save(ctx, &blockchainKey); err != nil {
-// 		return nil, fmt.Errorf("ошибка сохранения ключа в БД: %w", err)
-// 	}
-
-// 	// 7. Возвращаем результат
-// 	return &dto.GenerateKeyResponseDTO{
-// 		Id:          blockchainKey.Id,
-// 		Name:        blockchainKey.Name,
-// 		Description: blockchainKey.Description,
-// 		Blockchain:  blockchainKey.Blockchain,
-// 		PublicKey:   blockchainKey.PublicKey,
-// 		Address:     blockchainKey.Address,
-// 		Network:     blockchainKey.Network,
-// 	}, nil
-// }
 
 func (s *BlockchainKeyService) KeyDetail(ctx context.Context, keyID uuid.UUID, userID int64) (*dto.KeyDetailResponseDTO, error) {
 	key, err := s.blockchainKeyRepo.FindByID(ctx, keyID, userID)
@@ -171,7 +128,7 @@ func (s *BlockchainKeyService) GenerateEthereumKey(ctx context.Context, userID i
 	if err != nil {
 		return nil, fmt.Errorf("ошибка шифрования приватного ключа: %w", err)
 	}
-	fmt.Println("Соль:", salt)
+	// fmt.Println("Соль:", salt)
 
 	// 7. Хеширование мнемоники
 	mnemonicHash := sha256.Sum256([]byte(mnemonic))
@@ -234,81 +191,6 @@ func deriveEthereumKey(masterKey *hdkeychain.ExtendedKey) (*ecdsa.PrivateKey, er
 	return privateKey.ToECDSA(), nil
 }
 
-func (s *BlockchainKeyService) ImportEthereumKey(ctx context.Context, userID int64, key dto.ImportKeyDTO) (*dto.ImportKeyResponseDTO, error) {
-	var privateKey *ecdsa.PrivateKey
-	var mnemonicHash string
-
-	// switch key.Type {
-	// case dto.MnemonicKey:
-	if !bip39.IsMnemonicValid(key.Input) {
-		return nil, errors.New("недействительная мнемоника")
-	}
-
-	// Хешируем мнемонику
-	hash := sha256.Sum256([]byte(key.Input))
-	mnemonicHash = hex.EncodeToString(hash[:])
-
-	// Проверяем в БД
-	existingKey, err := s.blockchainKeyRepo.FindByMnemonicHash(ctx, mnemonicHash)
-	if err == nil && existingKey != nil {
-		return nil, errors.New("этот ключ уже импортирован")
-	}
-
-	// Генерируем ключ из мнемоники
-	seed := bip39.NewSeed(key.Input, "")
-	privateKey, err = crypto.ToECDSA(seed[:32])
-	if err != nil {
-		return nil, errors.New("ошибка генерации приватного ключа из мнемоники")
-	}
-
-	// case dto.PrivateKey:
-	// 	// Проверяем валидность приватного ключа
-	// 	privKeyBytes, err := hex.DecodeString(key.Input)
-	// 	if err != nil || len(privKeyBytes) != 32 {
-	// 		return nil, errors.New("недействительный приватный ключ")
-	// 	}
-
-	// 	privateKey, err = crypto.ToECDSA(privKeyBytes)
-	// 	if err != nil {
-	// 		return nil, errors.New("ошибка парсинга приватного ключа")
-	// 	}
-
-	// default:
-	// 	return nil, errors.New("неверный тип ключа, используйте 'mnemonic' или 'key'")
-	// }
-
-	// Генерируем адрес
-	publicKey := privateKey.Public().(*ecdsa.PublicKey)
-	address := crypto.PubkeyToAddress(*publicKey).Hex()
-
-	// Шифруем приватный ключ
-	privateKeyBytes := crypto.FromECDSA(privateKey)
-	encryptedKey, salt, err := s.securityService.EncryptPrivateKey(privateKeyBytes)
-	if err != nil {
-		return nil, errors.New("ошибка шифрования приватного ключа")
-	}
-
-	// Сохраняем в БД
-	blockchainKey := models.BlockchainKey{
-		UserId:       userID,
-		Blockchain:   models.Ethereum,
-		Network:      "goerli",
-		Address:      address,
-		EncryptedKey: encryptedKey,
-		PublicKey:    hex.EncodeToString(crypto.FromECDSAPub(publicKey)),
-		Salt:         salt,
-		MnemonicHash: mnemonicHash,
-	}
-
-	if _, err := s.blockchainKeyRepo.Save(ctx, &blockchainKey); err != nil {
-		return nil, fmt.Errorf("ошибка сохранения ключа в БД: %w", err)
-	}
-
-	return &dto.ImportKeyResponseDTO{
-		Address: address,
-	}, nil
-}
-
 func (s *BlockchainKeyService) FindKeysByUserID(ctx context.Context, userID int64) ([]dto.SafeKeyResponseDTO, error) {
 	keys, err := s.blockchainKeyRepo.FindByUserID(ctx, int64(userID))
 	if err != nil {
@@ -329,4 +211,187 @@ func (s *BlockchainKeyService) FindKeysByUserID(ctx context.Context, userID int6
 	}
 
 	return result, nil
+}
+
+func (s *BlockchainKeyService) SendEthereumTransaction(
+	ctx context.Context,
+	userID int64,
+	keyID uuid.UUID,
+	toAddress string,
+	amountInWei *big.Int,
+) (string, error) {
+	// 1. Получаем ключ из БД
+	key, err := s.blockchainKeyRepo.FindByIDWithKey(ctx, keyID)
+	if err != nil {
+		return "", fmt.Errorf("ключ не найден или доступ запрещен: %w", err)
+	}
+
+	// 2. Расшифровываем приватный ключ
+	privateKeyBytes, err := s.securityService.DecryptPrivateKey(key.EncryptedKey, key.Salt)
+	if err != nil {
+		return "", fmt.Errorf("ошибка расшифровки приватного ключа: %w", err)
+	}
+
+	privateKey, err := crypto.ToECDSA(privateKeyBytes)
+	if err != nil {
+		return "", fmt.Errorf("ошибка преобразования ключа: %w", err)
+	}
+
+	// 3. Подключение к публичному RPC Ethereum Mainnet
+	client, err := ethclient.Dial("https://rpc.ankr.com/eth/c53f01bd6d97a83e7e6cdb10ac9b4b3438186f73089a0e5d4d495bec5b1a616b")
+	if err != nil {
+		return "", fmt.Errorf("ошибка подключения к сети Ethereum: %w", err)
+	}
+	defer client.Close()
+
+	// 4. Получаем адрес отправителя
+	fromAddress := common.HexToAddress(key.Address)
+	if !common.IsHexAddress(toAddress) {
+		return "", fmt.Errorf("некорректный адрес получателя")
+	}
+	to := common.HexToAddress(toAddress)
+
+	// 5. Получаем nonce
+	nonce, err := client.PendingNonceAt(ctx, fromAddress)
+	if err != nil {
+		return "", fmt.Errorf("ошибка получения nonce: %w", err)
+	}
+
+	// 6. Получаем цену газа и увеличиваем для приоритета
+	suggestedGasPrice, err := client.SuggestGasPrice(ctx)
+	if err != nil {
+		return "", fmt.Errorf("ошибка получения цены газа: %w", err)
+	}
+	// Увеличим gas price в 2 раза для приоритета
+	// gasPrice := new(big.Int).Mul(suggestedGasPrice, big.NewInt(2))
+
+	// 7. Собираем транзакцию
+	gasLimit := uint64(21000)
+
+	tx := types.NewTransaction(nonce, to, amountInWei, gasLimit, suggestedGasPrice, nil)
+
+	// 8. Подписываем транзакцию для Mainnet
+	chainID := big.NewInt(1)
+	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
+	if err != nil {
+		return "", fmt.Errorf("ошибка подписи транзакции: %w", err)
+	}
+
+	// 9. Отправляем транзакцию в публичный mempool
+	err = client.SendTransaction(ctx, signedTx)
+	if err != nil {
+		return "", fmt.Errorf("ошибка отправки транзакции: %w", err)
+	}
+
+	// 10. Лог транзакции
+	fmt.Println("📤 Ethereum Mainnet Transaction Sent:")
+	fmt.Printf("🔑 From: %s\n", fromAddress.Hex())
+	fmt.Printf("📥 To:   %s\n", to.Hex())
+	fmt.Printf("💰 Amount: %s Wei\n", amountInWei.String())
+	// fmt.Printf("⛽ GasPrice: %s Wei\n", gasPrice.String())
+	fmt.Printf("🔢 Nonce: %d\n", nonce)
+	fmt.Printf("🔗 TxHash: %s\n", signedTx.Hash().Hex())
+
+	// 11. Возвращаем хэш транзакции
+	return signedTx.Hash().Hex(), nil
+}
+
+func (s *BlockchainKeyService) ImportEthereumKey(ctx context.Context, userID int64, key dto.ImportKeyDTO) (*dto.GenerateKeyResponseDTO, error) {
+	// 1. Проверка валидности мнемоники
+	entropy, err := bip39.NewEntropy(128)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка генерации энтропии: %w", err)
+	}
+
+	mnemonic, err := bip39.NewMnemonic(entropy)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка генерации мнемоники: %w", err)
+	}
+
+	if !bip39.IsMnemonicValid(mnemonic) {
+		return nil, fmt.Errorf("мнемоника недействительна")
+	}
+
+	// 2. Генерация сидов и master key
+	seed := bip39.NewSeed(mnemonic, "")
+	masterKey, err := hdkeychain.NewMaster(seed, &chaincfg.MainNetParams)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка создания master-ключа: %w", err)
+	}
+
+	// 3. Деривация Ethereum ключа
+	ethKey, err := deriveEthereumKey(masterKey)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка деривации Ethereum-ключа: %w", err)
+	}
+
+	// 4. Проверка публичного ключа
+	if ethKey.PublicKey.X == nil || ethKey.PublicKey.Y == nil {
+		return nil, fmt.Errorf("ошибка: публичный ключ Ethereum не инициализирован")
+	}
+
+	publicKeyBytes := crypto.FromECDSAPub(&ethKey.PublicKey)
+	address := crypto.PubkeyToAddress(ethKey.PublicKey).Hex()
+
+	// 5. Шифрование приватного ключа
+	privateKeyBytes := crypto.FromECDSA(ethKey)
+	encryptedKey, salt, err := s.securityService.EncryptPrivateKey(privateKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка шифрования приватного ключа: %w", err)
+	}
+
+	// 6. Хеш мнемоники
+	mnemonicHash := sha256.Sum256([]byte(mnemonic))
+
+	// 7. Сохранение в БД
+	blockchainKey := models.BlockchainKey{
+		UserId:       userID,
+		Name:         &key.Name,
+		Description:  &key.Description,
+		Blockchain:   models.Ethereum,
+		Network:      "goerli",
+		Address:      address,
+		EncryptedKey: encryptedKey,
+		PublicKey:    fmt.Sprintf("%x", publicKeyBytes),
+		Salt:         salt,
+		MnemonicHash: hex.EncodeToString(mnemonicHash[:]),
+	}
+
+	if _, err := s.blockchainKeyRepo.Save(ctx, &blockchainKey); err != nil {
+		return nil, fmt.Errorf("ошибка при сохранении импортированного ключа: %w", err)
+	}
+
+	// 8. Ответ
+	return &dto.GenerateKeyResponseDTO{
+		Id:          blockchainKey.Id,
+		Name:        blockchainKey.Name,
+		Description: blockchainKey.Description,
+		Blockchain:  blockchainKey.Blockchain,
+		Address:     blockchainKey.Address,
+		PublicKey:   blockchainKey.PublicKey,
+		Mnemonic:    mnemonic,
+		Network:     blockchainKey.Network,
+	}, nil
+}
+
+func (s *BlockchainKeyService) ExportAndDeleteEthereumKeyByID(ctx context.Context, id uuid.UUID, userID int64) ([]byte, error) {
+	// 1. Получаем ключ из базы
+	key, err := s.blockchainKeyRepo.FindByIDWithKey(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get key: %w", err)
+	}
+
+	// 2. Дешифруем приватный ключ
+	decryptedKey, err := s.securityService.DecryptPrivateKey(key.EncryptedKey, key.Salt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt key: %w", err)
+	}
+
+	// 3. Удаляем ключ из базы
+	err = s.blockchainKeyRepo.DeleteEthereumKeyByID(ctx, id, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete key: %w", err)
+	}
+
+	return decryptedKey, nil
 }

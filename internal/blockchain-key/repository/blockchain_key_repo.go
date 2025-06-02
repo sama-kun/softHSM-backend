@@ -16,6 +16,7 @@ type BlockchainKeyRepositoryInterface interface {
 	FindByMnemonicHash(ctx context.Context, mnemonicHash string) (*models.BlockchainKey, error)
 	FindByUserID(ctx context.Context, userID int64) ([]models.BlockchainKey, error)
 	FindByID(ctx context.Context, id uuid.UUID, userID int64) (*models.BlockchainKey, error)
+	DeleteEthereumKeyByID(ctx context.Context, id uuid.UUID, userID int64) error
 }
 
 type BlockchainKeyRepository struct {
@@ -24,6 +25,12 @@ type BlockchainKeyRepository struct {
 
 func NewBlockchainKeyRepository(db *storage.Postgres) BlockchainKeyRepositoryInterface {
 	return &BlockchainKeyRepository{db: db}
+}
+
+func (r *BlockchainKeyRepository) DeleteEthereumKeyByID(ctx context.Context, id uuid.UUID, userID int64) error {
+	query := `DELETE FROM blockchain_keys WHERE id = $1 AND user_id = $2`
+	_, err := r.db.Conn().Exec(ctx, query, id, userID)
+	return err
 }
 
 func (r *BlockchainKeyRepository) FindByID(ctx context.Context, id uuid.UUID, userID int64) (*models.BlockchainKey, error) {
@@ -61,7 +68,7 @@ func (r *BlockchainKeyRepository) FindByIDWithKey(ctx context.Context, id uuid.U
 	var key models.BlockchainKey
 
 	query := `
-	  SELECT id, blockchain, user_id, encrypted_key, name, description, network, address
+	  SELECT id, blockchain, user_id, encrypted_key, name, description, network, address, salt
 		FROM blockchain_keys
 		WHERE id = $1
 	`
@@ -75,6 +82,7 @@ func (r *BlockchainKeyRepository) FindByIDWithKey(ctx context.Context, id uuid.U
 		&key.Description,
 		&key.Network,
 		&key.Address,
+		&key.Salt,
 	)
 
 	if err != nil {

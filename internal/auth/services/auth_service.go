@@ -140,6 +140,29 @@ func (s *AuthService) SetMasterPassword(ctx context.Context, id int64, masterPas
 	}, nil
 }
 
+func (s *AuthService) ResetPassword(ctx context.Context, userID int64, data dto.ResetPasswordDTO) bool {
+	if data.NewPassword != data.ConfirmNewPassword {
+		return false
+	}
+
+	user, err := s.userRepo.GetUserById(ctx, userID)
+	if err != nil {
+		return false
+	}
+
+	if s.passwordService.CheckPassword(data.CurrentPassword, user.Password) {
+		return false
+	}
+
+	newHashedPassword, err := s.passwordService.HashPassword(data.NewPassword)
+	if err != nil {
+		return false
+	}
+	check, _ := s.userRepo.SetPassword(ctx, userID, newHashedPassword)
+
+	return check
+}
+
 func (s *AuthService) CheckMasterPassword(ctx context.Context, id int64, masterPassword string) (*dto.CheckMasterPasswordResponseDTO, error) {
 	user, err := s.userRepo.GetUserById(ctx, id)
 

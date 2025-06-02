@@ -91,7 +91,7 @@ func (h *BlockchainKeyHandler) GenerateKey(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *BlockchainKeyHandler) ImportKey(w http.ResponseWriter, r *http.Request) {
-	_, err := middleware.GetUserFromContext(r)
+	user, err := middleware.GetUserFromContext(r)
 
 	if err != nil {
 		middleware.ErrorHandler(w, http.StatusUnauthorized, err, "Unauthorized")
@@ -109,13 +109,7 @@ func (h *BlockchainKeyHandler) ImportKey(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	sessionUser, err := middleware.ExtractAndDecryptSessionToken(r)
-	if err != nil {
-		middleware.ErrorHandler(w, http.StatusUnauthorized, err, "Unauthorized Session")
-		return
-	}
-
-	resp, err := h.blockchainKeyService.ImportEthereumKey(context.Background(), int64(sessionUser.Id), req)
+	resp, err := h.blockchainKeyService.ImportEthereumKey(context.Background(), int64(user.Id), req)
 
 	if err != nil {
 		middleware.ErrorHandler(w, http.StatusInternalServerError, err, "Generate key failed")
@@ -136,7 +130,77 @@ func (h *BlockchainKeyHandler) GetKeysByUserId(w http.ResponseWriter, r *http.Re
 	resp, err := h.blockchainKeyService.FindKeysByUserID(context.Background(), int64(user.Id))
 
 	if err != nil {
-		middleware.ErrorHandler(w, http.StatusInternalServerError, err, "Generate key failed")
+		middleware.ErrorHandler(w, http.StatusInternalServerError, err, "Internal server error")
+		return
+	}
+
+	middleware.JSONResponse(w, http.StatusCreated, resp)
+}
+
+func (h *BlockchainKeyHandler) SendEthereumTransaction(w http.ResponseWriter, r *http.Request) {
+	user, err := middleware.GetUserFromContext(r)
+
+	if err != nil {
+		middleware.ErrorHandler(w, http.StatusUnauthorized, err, "Unauthorized")
+		return
+	}
+
+	var req dto.SendEthereumDTO
+
+	if err := middleware.DecodeJSON(r, &req); err != nil {
+		middleware.ErrorHandler(w, http.StatusBadRequest, err, "Invalid request body")
+		return
+	}
+
+	if err := validators.ValidateStruct(req); err != nil {
+		middleware.ErrorHandler(w, http.StatusBadRequest, err, "invalid input")
+		return
+	}
+
+	amount, err := req.ToBigInt()
+	if err != nil {
+		http.Error(w, "Invalid amount format: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	resp, err := h.blockchainKeyService.SendEthereumTransaction(context.Background(), int64(user.Id), req.KeyId, req.ToAddress, amount)
+
+	if err != nil {
+		middleware.ErrorHandler(w, http.StatusInternalServerError, err, "Money transaction failed")
+		return
+	}
+
+	middleware.JSONResponse(w, http.StatusCreated, resp)
+}
+
+func (h *BlockchainKeyHandler) ExportAndDeleteKey(w http.ResponseWriter, r *http.Request) {
+	user, err := middleware.GetUserFromContext(r)
+
+	if err != nil {
+		middleware.ErrorHandler(w, http.StatusUnauthorized, err, "Unauthorized")
+		return
+	}
+
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 4 || parts[3] == "" {
+		http.Error(w, "Key ID is required", http.StatusBadRequest)
+		return
+	}
+
+	keyIDStr := parts[4]
+	fmt.Println("Extracted UUID string:", keyIDStr)
+
+	// Парсим UUID
+	keyID, err := uuid.Parse(keyIDStr)
+	if err != nil {
+		middleware.ErrorHandler(w, http.StatusBadRequest, err, "Invalid key ID")
+		return
+	}
+
+	resp, err := h.blockchainKeyService.ExportAndDeleteEthereumKeyByID(context.Background(), keyID, int64(user.Id))
+
+	if err != nil {
+		middleware.ErrorHandler(w, http.StatusInternalServerError, err, "Export failed")
 		return
 	}
 

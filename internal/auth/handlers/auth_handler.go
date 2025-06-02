@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"soft-hsm/internal/auth/dto"
 	"soft-hsm/internal/auth/services"
@@ -69,12 +70,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req dto.LoginDTO
 
 	if err := middleware.DecodeJSON(r, &req); err != nil {
+		fmt.Println(err)
 		middleware.ErrorHandler(w, http.StatusBadRequest, err, "Invalid request body")
 		return
 	}
 
 	resp, err := h.authSerice.Login(context.Background(), req)
 	if err != nil {
+		fmt.Println(err)
 		middleware.ErrorHandler(w, http.StatusInternalServerError, err, "Login failed")
 		return
 	}
@@ -120,7 +123,32 @@ func (h *AuthHandler) CheckMasterPassword(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resp, err := h.authSerice.CheckMasterPassword(context.Background(), int64(user.Id), req.MasterPassword)
+	resp, _ := h.authSerice.CheckMasterPassword(context.Background(), int64(user.Id), req.MasterPassword)
+
+	middleware.JSONResponse(w, http.StatusOK, resp)
+}
+
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req dto.ResetPasswordDTO
+	user, err := middleware.GetUserFromContext(r)
+
+	if err != nil {
+		// http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		middleware.ErrorHandler(w, http.StatusUnauthorized, err, "Unauthorized")
+		return
+	}
+
+	if err := middleware.DecodeJSON(r, &req); err != nil {
+		middleware.ErrorHandler(w, http.StatusBadRequest, err, "Invalid request body")
+		return
+	}
+
+	if err := validators.ValidateStruct(req); err != nil {
+		middleware.ErrorHandler(w, http.StatusBadRequest, err, "invalid input")
+		return
+	}
+
+	resp := h.authSerice.ResetPassword(context.Background(), int64(user.Id), req)
 
 	middleware.JSONResponse(w, http.StatusOK, resp)
 }

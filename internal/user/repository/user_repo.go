@@ -19,6 +19,7 @@ type UserRepositoryInterface interface {
 	ActiveUser(ctx context.Context, email string) error
 	GetUserById(ctx context.Context, id int64) (*models.User, error)
 	SetMasterPassword(ctx context.Context, id int64, hashedMasterPassword string) error
+	SetPassword(ctx context.Context, id int64, newHashedPassword string) (bool, error)
 }
 
 type UserRepository struct {
@@ -27,6 +28,26 @@ type UserRepository struct {
 
 func NewUserRepository(db *storage.Postgres) UserRepositoryInterface {
 	return &UserRepository{db: db}
+}
+
+func (r *UserRepository) SetPassword(ctx context.Context, id int64, newHashedPassword string) (bool, error) {
+	query := `
+		UPDATE users
+		SET password = $1
+		WHERE id = $2;
+	`
+
+	cmdTag, err := r.db.Conn().Exec(ctx, query, id, newHashedPassword)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to update user: %w", err)
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		return false, fmt.Errorf("no user found with email: %d", id)
+	}
+
+	return true, nil
 }
 
 func (r *UserRepository) ActiveUser(ctx context.Context, email string) error {

@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
+	"fmt"
 	"io"
 	"os"
 
@@ -75,28 +75,27 @@ func (s *SecurityService) EncryptPrivateKey(privateKey []byte) (string, string, 
 func (s *SecurityService) DecryptPrivateKey(encryptedKey, saltB64 string) ([]byte, error) {
 	salt, err := base64.StdEncoding.DecodeString(saltB64)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка декодирования соли: %w", err)
 	}
 	encryptionKey := s.DeriveEncryptionKey(salt)
 
 	block, err := aes.NewCipher(encryptionKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка создания AES: %w", err)
 	}
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка создания GCM: %w", err)
 	}
 	encryptedData, err := base64.StdEncoding.DecodeString(encryptedKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка декодирования encryptedKey: %w", err)
 	}
 
-	nonceSize := aesGCM.NonceSize()
-	if len(encryptedData) < nonceSize {
-		return nil, errors.New("некорректные данные")
+	if len(encryptedData) < aesGCM.NonceSize() {
+		return nil, fmt.Errorf("некорректные данные: длина зашифрованного %d < nonceSize %d", len(encryptedData), aesGCM.NonceSize())
 	}
 
-	nonce, ciphertext := encryptedData[:nonceSize], encryptedData[nonceSize:]
+	nonce, ciphertext := encryptedData[:aesGCM.NonceSize()], encryptedData[aesGCM.NonceSize():]
 	return aesGCM.Open(nil, nonce, ciphertext, nil)
 }

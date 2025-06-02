@@ -13,6 +13,8 @@ func BlockchainKeyRoutes(blockchainKeyHandler *handlers.BlockchainKeyHandler) ch
 	r.Post("/import", blockchainKeyHandler.ImportKey)
 	r.Get("/", blockchainKeyHandler.GetKeysByUserId)
 	r.Get("/{id}", blockchainKeyHandler.KeyDetail)
+	r.Get("/export-and-delete/{id}", blockchainKeyHandler.ExportAndDeleteKey)
+	r.Post("/transaction", blockchainKeyHandler.SendEthereumTransaction)
 
 	return r
 }
