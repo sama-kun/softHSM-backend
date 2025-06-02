@@ -18,6 +18,7 @@ func AuthRoutes(authHandler *handlers.AuthHandler) chi.Router {
 		r.Use(middleware.AuthMiddleware)
 		r.Patch("/set-master", authHandler.SetMasterPassword)
 		r.Post("/check-master", authHandler.CheckMasterPassword)
+		r.Post("/reset-password", authHandler.ResetPassword)
 	})
 
 	return r
