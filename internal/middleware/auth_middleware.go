@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"soft-hsm/internal/auth/services"
 	"soft-hsm/internal/config"
@@ -58,19 +57,19 @@ func GetUserFromContext(r *http.Request) (*services.ClaimsService, error) {
 	return user, nil
 }
 
-func ExtractAndDecryptSessionToken(r *http.Request) (*services.ClaimsService, error) {
-	token := r.Header.Get("X-Session-Token")
-	if token == "" {
-		return nil, errors.New("missing session token")
-	}
+// func ExtractAndDecryptSessionToken(r *http.Request) (*services.ClaimsService, error) {
+// 	token := r.Header.Get("X-Session-Token")
+// 	if token == "" {
+// 		return nil, errors.New("missing session token")
+// 	}
 
-	fmt.Println(token)
+// 	fmt.Println(token)
 
-	claimsService := services.NewClaimsService(config.MustLoad())
-	claims, err := claimsService.ValidateSessionToken(token)
-	if err != nil {
-		return nil, errors.New("invalid session token")
-	}
+// 	claimsService := services.NewClaimsService(config.MustLoad())
+// 	// claims, err := claimsService.ValidateSessionToken(token)
+// 	if err != nil {
+// 		return nil, errors.New("invalid session token")
+// 	}
 
-	return claims, nil
-}
+// 	return claims, nil
+// }

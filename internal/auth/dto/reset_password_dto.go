@@ -1,7 +1,7 @@
 package dto
 
 type ResetPasswordDTO struct {
-	CurrentPassword    string `json:"currentPasswrod"`
-	NewPassword        string `json:"newPasswrod"`
-	ConfirmNewPassword string `json:"confirmNewPasswrod"`
+	CurrentPassword    string `json:"currentPassword"`
+	NewPassword        string `json:"newPassword"`
+	ConfirmNewPassword string `json:"confirmNewPassword"`
 }

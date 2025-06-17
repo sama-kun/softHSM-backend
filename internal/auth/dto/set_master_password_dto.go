@@ -1,5 +1,6 @@
 package dto
 
 type SetMasterPassword struct {
-	MasterPassword string `json:"masterPassword"`
+	SessionToken string `json:"sessionToken"`
+	Otp          string `json:"otp"`
 }

@@ -4,14 +4,18 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"time"
 
 	"soft-hsm/internal/blockchain-key/dto"
 	"soft-hsm/internal/blockchain-key/models"
 	"soft-hsm/internal/blockchain-key/repository"
 	"soft-hsm/internal/blockchain-key/security"
+
+	baseModels "soft-hsm/internal/common/models"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil/hdkeychain"
@@ -26,7 +30,7 @@ import (
 // https://mainnet.infura.io/v3/6341f9c84e9c4f7a91cc518c69a5c11c
 type BlockchainKeyServiceInterface interface {
 	GenerateEthereumKey(ctx context.Context, userID int64, dto dto.GenerateKeyDTO) (*dto.GenerateKeyResponseDTO, error)
-	ImportEthereumKey(ctx context.Context, userID int64, key dto.ImportKeyDTO) (*dto.GenerateKeyResponseDTO, error)
+	ImportEthereumKey(ctx context.Context, userID int64, key dto.RecoverKeyDTO) (*dto.GenerateKeyResponseDTO, error)
 	FindKeysByUserID(ctx context.Context, userID int64) ([]dto.SafeKeyResponseDTO, error)
 	KeyDetail(ctx context.Context, keyID uuid.UUID, userID int64) (*dto.KeyDetailResponseDTO, error)
 	SendEthereumTransaction(
@@ -36,7 +40,8 @@ type BlockchainKeyServiceInterface interface {
 		toAddress string,
 		amountInWei *big.Int,
 	) (string, error)
-	ExportAndDeleteEthereumKeyByID(ctx context.Context, id uuid.UUID, userID int64) ([]byte, error)
+	ExportAndDeleteEthereumKeyByID(ctx context.Context, id uuid.UUID, userID int64) (string, error)
+	ImportEthereumPrivateKey(ctx context.Context, userID int64, key dto.ImportPrivateKeyDTO) (*dto.GenerateKeyResponseDTO, error)
 }
 
 type BlockchainKeyService struct {
@@ -146,6 +151,10 @@ func (s *BlockchainKeyService) GenerateEthereumKey(ctx context.Context, userID i
 		PublicKey:    fmt.Sprintf("%x", publicKeyBytes),
 		Salt:         salt,
 		MnemonicHash: hex.EncodeToString(mnemonicHash[:]),
+		BlockchainBaseModel: baseModels.BlockchainBaseModel{
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		},
 	}
 
 	if _, err := s.blockchainKeyRepo.Save(ctx, &blockchainKey); err != nil {
@@ -296,24 +305,14 @@ func (s *BlockchainKeyService) SendEthereumTransaction(
 	return signedTx.Hash().Hex(), nil
 }
 
-func (s *BlockchainKeyService) ImportEthereumKey(ctx context.Context, userID int64, key dto.ImportKeyDTO) (*dto.GenerateKeyResponseDTO, error) {
+func (s *BlockchainKeyService) ImportEthereumKey(ctx context.Context, userID int64, key dto.RecoverKeyDTO) (*dto.GenerateKeyResponseDTO, error) {
 	// 1. Проверка валидности мнемоники
-	entropy, err := bip39.NewEntropy(128)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка генерации энтропии: %w", err)
-	}
-
-	mnemonic, err := bip39.NewMnemonic(entropy)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка генерации мнемоники: %w", err)
-	}
-
-	if !bip39.IsMnemonicValid(mnemonic) {
+	if !bip39.IsMnemonicValid(key.Mnemonic) {
 		return nil, fmt.Errorf("мнемоника недействительна")
 	}
 
-	// 2. Генерация сидов и master key
-	seed := bip39.NewSeed(mnemonic, "")
+	// 2. Генерация сидов и master key из переданной мнемоники
+	seed := bip39.NewSeed(key.Mnemonic, "")
 	masterKey, err := hdkeychain.NewMaster(seed, &chaincfg.MainNetParams)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка создания master-ключа: %w", err)
@@ -341,7 +340,7 @@ func (s *BlockchainKeyService) ImportEthereumKey(ctx context.Context, userID int
 	}
 
 	// 6. Хеш мнемоники
-	mnemonicHash := sha256.Sum256([]byte(mnemonic))
+	mnemonicHash := sha256.Sum256([]byte(key.Mnemonic))
 
 	// 7. Сохранение в БД
 	blockchainKey := models.BlockchainKey{
@@ -369,29 +368,74 @@ func (s *BlockchainKeyService) ImportEthereumKey(ctx context.Context, userID int
 		Blockchain:  blockchainKey.Blockchain,
 		Address:     blockchainKey.Address,
 		PublicKey:   blockchainKey.PublicKey,
-		Mnemonic:    mnemonic,
+		Mnemonic:    key.Mnemonic,
 		Network:     blockchainKey.Network,
 	}, nil
 }
 
-func (s *BlockchainKeyService) ExportAndDeleteEthereumKeyByID(ctx context.Context, id uuid.UUID, userID int64) ([]byte, error) {
-	// 1. Получаем ключ из базы
+func (s *BlockchainKeyService) ExportAndDeleteEthereumKeyByID(ctx context.Context, id uuid.UUID, userID int64) (string, error) {
 	key, err := s.blockchainKeyRepo.FindByIDWithKey(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get key: %w", err)
+		return "", fmt.Errorf("failed to get key: %w", err)
 	}
 
-	// 2. Дешифруем приватный ключ
 	decryptedKey, err := s.securityService.DecryptPrivateKey(key.EncryptedKey, key.Salt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt key: %w", err)
+		return "", fmt.Errorf("failed to decrypt key: %w", err)
 	}
 
-	// 3. Удаляем ключ из базы
 	err = s.blockchainKeyRepo.DeleteEthereumKeyByID(ctx, id, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete key: %w", err)
+		return "", fmt.Errorf("failed to delete key: %w", err)
 	}
 
-	return decryptedKey, nil
+	// Возвращаем base64 (можно hex, если хочешь)
+	return base64.StdEncoding.EncodeToString(decryptedKey), nil
+}
+
+func (s *BlockchainKeyService) ImportEthereumPrivateKey(ctx context.Context, userID int64, key dto.ImportPrivateKeyDTO) (*dto.GenerateKeyResponseDTO, error) {
+	privateKeyBytes, err := base64.StdEncoding.DecodeString(key.PrivateKeyBase64)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка декодирования приватного ключа: %w", err)
+	}
+
+	privateKey, err := crypto.ToECDSA(privateKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка преобразования байтов в ECDSA ключ: %w", err)
+	}
+
+	publicKeyBytes := crypto.FromECDSAPub(&privateKey.PublicKey)
+	address := crypto.PubkeyToAddress(privateKey.PublicKey).Hex()
+
+	encryptedKey, salt, err := s.securityService.EncryptPrivateKey(privateKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка шифрования: %w", err)
+	}
+
+	blockchainKey := models.BlockchainKey{
+		UserId:       userID,
+		Name:         &key.Name,
+		Description:  &key.Description,
+		Blockchain:   models.Ethereum,
+		Network:      "goerli",
+		Address:      address,
+		EncryptedKey: encryptedKey,
+		PublicKey:    fmt.Sprintf("%x", publicKeyBytes),
+		Salt:         salt,
+	}
+
+	if _, err := s.blockchainKeyRepo.Save(ctx, &blockchainKey); err != nil {
+		return nil, fmt.Errorf("ошибка сохранения ключа: %w", err)
+	}
+
+	return &dto.GenerateKeyResponseDTO{
+		Id:          blockchainKey.Id,
+		Name:        blockchainKey.Name,
+		Description: blockchainKey.Description,
+		Blockchain:  blockchainKey.Blockchain,
+		Address:     blockchainKey.Address,
+		PublicKey:   blockchainKey.PublicKey,
+		Mnemonic:    "", // нету, потому что это импорт по приватнику
+		Network:     blockchainKey.Network,
+	}, nil
 }

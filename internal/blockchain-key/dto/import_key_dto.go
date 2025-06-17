@@ -7,10 +7,10 @@ const (
 	PrivateKey  KeyType = "key"
 )
 
-type ImportKeyDTO struct {
+type RecoverKeyDTO struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	PrivateKey  string `json:"privateKey"`
+	Mnemonic    string `json:"mnemonic"`
 }
 
 type ImportKeyResponseDTO struct {

@@ -2,13 +2,17 @@ package services
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
+	"math/rand"
 	"soft-hsm/internal/auth/dto"
 	"soft-hsm/internal/auth/repository"
 	"soft-hsm/internal/common/validators"
 	"soft-hsm/internal/mailer"
 	"soft-hsm/internal/user/models"
 	userRepository "soft-hsm/internal/user/repository"
+	"strings"
+	"time"
 )
 
 type AuthService struct {
@@ -47,6 +51,7 @@ func (s *AuthService) Register(ctx context.Context, registerDTO dto.RegisterDTO)
 	if err != nil {
 		return nil, fmt.Errorf("password cannot hash: %w", err)
 	}
+	fmt.Println("Hashed Pass", hashedPassword)
 
 	newUser, err := s.userRepo.SaveUser(ctx, &models.User{
 		Email:    registerDTO.Email,
@@ -61,6 +66,8 @@ func (s *AuthService) Register(ctx context.Context, registerDTO dto.RegisterDTO)
 	if err != nil {
 		return nil, fmt.Errorf("cannot generate a token: %w", err)
 	}
+
+	// is_verified | is_active_master | is_active
 
 	fmt.Println("Token:", activationToken)
 
@@ -81,6 +88,11 @@ func (s *AuthService) Register(ctx context.Context, registerDTO dto.RegisterDTO)
 	}, nil
 }
 
+func generateOtp() string {
+	rand.Seed(time.Now().UnixNano())
+	return fmt.Sprintf("%04d", rand.Intn(10000))
+}
+
 func (s *AuthService) Login(ctx context.Context, loginDto dto.LoginDTO) (*dto.LoginResponseDTO, error) {
 
 	if err := validators.ValidateStruct(loginDto); err != nil {
@@ -94,14 +106,22 @@ func (s *AuthService) Login(ctx context.Context, loginDto dto.LoginDTO) (*dto.Lo
 	}
 
 	if !s.passwordService.CheckPassword(loginDto.Password, user.Password) {
-		return nil, fmt.Errorf("incorrect login or password")
+		return nil, fmt.Errorf("incorrect login or password: %w", err)
 	}
+
+	// cpG3Fa7kiyU8aPgg7GtR/Q==$xgMmWlA7EVmgNqh8OxVmGwyya32MmgHPl3WDQBN23A4=
 
 	// if !user.IsActive {
 	// 	return nil, fmt.Errorf("accout not active")
 	// }
 
-	token, err := s.cliamsService.GenerateToken(int(user.Id), loginDto.Email)
+	otp := generateOtp()
+
+	fmt.Println(otp)
+
+	token, err := s.cliamsService.GenerateOTP(int64(user.Id), otp, loginDto.Email)
+
+	fmt.Println(token)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
@@ -111,9 +131,15 @@ func (s *AuthService) Login(ctx context.Context, loginDto dto.LoginDTO) (*dto.Lo
 		return nil, err
 	}
 
+	go func() {
+		if err := s.mailer.SendOTPEmail(user.Email, otp); err != nil {
+			fmt.Printf("Failed to send activation email to %s: %v\n", user.Email, err)
+		}
+	}()
+
 	return &dto.LoginResponseDTO{
-		AccessToken: token,
-		User:        user,
+		SessionToken: token,
+		User:         user,
 	}, nil
 }
 
@@ -140,50 +166,75 @@ func (s *AuthService) SetMasterPassword(ctx context.Context, id int64, masterPas
 	}, nil
 }
 
-func (s *AuthService) ResetPassword(ctx context.Context, userID int64, data dto.ResetPasswordDTO) bool {
+func (s *AuthService) ResetPassword(ctx context.Context, userID int64, data dto.ResetPasswordDTO) (bool, error) {
+	fmt.Println("DTO:", data)
 	if data.NewPassword != data.ConfirmNewPassword {
-		return false
+		return false, nil
 	}
 
 	user, err := s.userRepo.GetUserById(ctx, userID)
 	if err != nil {
-		return false
+		return false, err
 	}
 
-	if s.passwordService.CheckPassword(data.CurrentPassword, user.Password) {
-		return false
+	fmt.Println("PASS:", data.CurrentPassword, user.Password)
+	fmt.Println("CHECK:", s.passwordService.CheckPassword(data.CurrentPassword, user.Password))
+
+	if !s.passwordService.CheckPassword(data.CurrentPassword, user.Password) {
+		return false, err
 	}
 
 	newHashedPassword, err := s.passwordService.HashPassword(data.NewPassword)
 	if err != nil {
-		return false
+		return false, err
 	}
-	check, _ := s.userRepo.SetPassword(ctx, userID, newHashedPassword)
 
-	return check
+	fmt.Println("User: ", user)
+	check, err := s.userRepo.SetPassword(ctx, userID, newHashedPassword)
+
+	if err != nil {
+		return false, err
+	}
+
+	return check, nil
 }
 
-func (s *AuthService) CheckMasterPassword(ctx context.Context, id int64, masterPassword string) (*dto.CheckMasterPasswordResponseDTO, error) {
-	user, err := s.userRepo.GetUserById(ctx, id)
+func (s *AuthService) CheckMasterPassword(ctx context.Context, sessionToken string, otp string) (*dto.CheckMasterPasswordResponseDTO, error) {
+	// user, err := s.userRepo.GetUserById(ctx, id)
 
-	if !s.passwordService.CheckPassword(masterPassword, user.MasterPassword) || err != nil {
+	// if err != nil {
+	// 	return nil, fmt.Errorf("cannot generate access token: %w", err)
+	// }
+
+	// if !user.IsActive {
+	// 	return nil, fmt.Errorf("User not active: %w", err)
+	// }
+
+	payload, _ := s.cliamsService.ValidateOTPToken(sessionToken)
+
+	fmt.Println("From DTO", otp)
+	fmt.Println("OTP", payload.Otp)
+	fmt.Println("ID", payload.Id)
+	fmt.Println("Email", payload.Email)
+	fmt.Println("Valid", subtle.ConstantTimeCompare([]byte(strings.TrimSpace(payload.Otp)), []byte(strings.TrimSpace(otp))) != 1)
+
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(payload.Otp)), []byte(strings.TrimSpace(otp))) != 1 {
+		return nil, fmt.Errorf("cannot validate session token")
+	}
+
+	accessToken, err := s.cliamsService.GenerateToken(int(payload.Id), payload.Email)
+	if err != nil {
+		return nil, fmt.Errorf("cannot generate access token: %w", err)
+	}
+
+	user, err := s.userRepo.GetUserByEmail(ctx, payload.Email)
+
+	if err != nil {
 		return nil, fmt.Errorf("incorrect login or password: %w", err)
 	}
 
-	if !user.IsActive {
-		return nil, fmt.Errorf("User not active: %w", err)
-	}
-
-	sessionToken, err := s.cliamsService.GenerateBlockchainOTP(user.Id)
-
-	if err != nil {
-		return nil, fmt.Errorf("cannot generate session token: %w", err)
-	}
-
-	fmt.Println(sessionToken)
-
 	return &dto.CheckMasterPasswordResponseDTO{
-		SessionToken: sessionToken,
-		Id:           id,
+		AccessToken: accessToken,
+		User:        user,
 	}, nil
 }

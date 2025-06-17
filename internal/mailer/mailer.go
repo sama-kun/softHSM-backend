@@ -48,3 +48,36 @@ func (m *Mailer) SendActivationEmail(to, token string) error {
 		msg,
 	)
 }
+
+func (m *Mailer) SendOTPEmail(to, otp string) error {
+
+	tmpl, err := template.ParseFiles("templates/otp_email.html")
+	if err != nil {
+		return fmt.Errorf("ошибка загрузки шаблона: %w", err)
+	}
+
+	var body bytes.Buffer
+	data := map[string]string{
+		"OTPCode": otp,
+	}
+
+	if err := tmpl.Execute(&body, data); err != nil {
+		return fmt.Errorf("ошибка генерации HTML: %w", err)
+	}
+
+	msg := []byte(
+		"Subject: Подтверждение авторизации\r\n" +
+			"Content-Type: text/html; charset=UTF-8\r\n\r\n" +
+			body.String(),
+	)
+
+	auth := smtp.PlainAuth("", m.mailerConfig.From, m.mailerConfig.Password, m.mailerConfig.SMTPHost)
+
+	return smtp.SendMail(
+		m.mailerConfig.SMTPHost+":"+strconv.Itoa(m.mailerConfig.SMTPPort),
+		auth,
+		m.mailerConfig.From,
+		[]string{to},
+		msg,
+	)
+}

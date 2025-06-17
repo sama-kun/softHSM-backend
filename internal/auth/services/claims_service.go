@@ -12,6 +12,7 @@ type ClaimsService struct {
 	cfg   *config.Config
 	Email string `json:"email"`
 	Id    int    `json:"id"`
+	Otp   string `json:"otp"`
 	jwt.RegisteredClaims
 }
 
@@ -88,12 +89,14 @@ func (c *ClaimsService) ValidateActivationToken(tokenString string) (*ClaimsServ
 	return claims, nil
 }
 
-func (c *ClaimsService) GenerateBlockchainOTP(userID int64) (string, error) {
+func (c *ClaimsService) GenerateOTP(userID int64, code string, email string) (string, error) {
 	sessionSecret := []byte(c.cfg.JWTConfig.SessionSecret)
 	sessionInMinutes := c.cfg.JWTConfig.SessionExpires
 
 	claims := &ClaimsService{
-		Id: int(userID),
+		Id:    int(userID),
+		Otp:   code,
+		Email: email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(sessionInMinutes) * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -104,7 +107,7 @@ func (c *ClaimsService) GenerateBlockchainOTP(userID int64) (string, error) {
 	return token.SignedString(sessionSecret)
 }
 
-func (c *ClaimsService) ValidateSessionToken(tokenString string) (*ClaimsService, error) {
+func (c *ClaimsService) ValidateOTPToken(tokenString string) (*ClaimsService, error) {
 	jwtSecret := []byte(c.cfg.JWTConfig.SessionSecret)
 	expiresInMinutes := c.cfg.JWTConfig.SessionExpires // Проверяем, что путь верный!
 	fmt.Println("Expires: ", expiresInMinutes)
@@ -121,6 +124,11 @@ func (c *ClaimsService) ValidateSessionToken(tokenString string) (*ClaimsService
 	if !ok || !token.Valid {
 		return nil, jwt.ErrSignatureInvalid
 	}
+	fmt.Println(claims)
+	fmt.Println(claims.Otp)
+
+	fmt.Println(claims.Id)
+	fmt.Println(claims.Email)
 
 	return claims, nil
 }

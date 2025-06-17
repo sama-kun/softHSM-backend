@@ -37,7 +37,7 @@ func (r *UserRepository) SetPassword(ctx context.Context, id int64, newHashedPas
 		WHERE id = $2;
 	`
 
-	cmdTag, err := r.db.Conn().Exec(ctx, query, id, newHashedPassword)
+	cmdTag, err := r.db.Conn().Exec(ctx, query, newHashedPassword, id)
 
 	if err != nil {
 		return false, fmt.Errorf("failed to update user: %w", err)

@@ -13,6 +13,8 @@ type TokenRepositoryInterface interface {
 	SaveActivationToken(ctx context.Context, email, token string, expiresIn int64) error
 	GetActivationToken(ctx context.Context, email string) (string, error)
 	DeleteActivationToken(ctx context.Context, email string) error
+	GetOTPToken(ctx context.Context, email string) (string, error)
+	DeleteOTPToken(ctx context.Context, email string) error
 }
 
 type TokenRepository struct {
@@ -45,4 +47,12 @@ func (r *TokenRepository) GetActivationToken(ctx context.Context, email string) 
 
 func (r *TokenRepository) DeleteActivationToken(ctx context.Context, email string) error {
 	return r.redis.Delete(ctx, "activationToken:"+email)
+}
+
+func (r *TokenRepository) GetOTPToken(ctx context.Context, email string) (string, error) {
+	return r.redis.Get(ctx, "otpToken:"+email)
+}
+
+func (r *TokenRepository) DeleteOTPToken(ctx context.Context, email string) error {
+	return r.redis.Delete(ctx, "otpToken:"+email)
 }

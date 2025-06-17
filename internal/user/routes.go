@@ -12,3 +12,5 @@ func UserRoutes(userHandler *handlers.UserHandler) chi.Router {
 	r.Post("/me", userHandler.Me)
 	return r
 }
+
+// Жаксибаева Назкен Галимовна

@@ -97,7 +97,7 @@ func (h *BlockchainKeyHandler) ImportKey(w http.ResponseWriter, r *http.Request)
 		middleware.ErrorHandler(w, http.StatusUnauthorized, err, "Unauthorized")
 		return
 	}
-	var req dto.ImportKeyDTO
+	var req dto.RecoverKeyDTO
 
 	if err := middleware.DecodeJSON(r, &req); err != nil {
 		middleware.ErrorHandler(w, http.StatusBadRequest, err, "Invalid request body")

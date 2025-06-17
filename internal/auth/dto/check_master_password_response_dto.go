@@ -1,6 +1,8 @@
 package dto
 
+import "soft-hsm/internal/user/models"
+
 type CheckMasterPasswordResponseDTO struct {
-	SessionToken string `json:"sessionToken"`
-	Id           int64  `json:"id"`
+	AccessToken string       `json:"accessToken"`
+	User        *models.User `json:"user"`
 }
